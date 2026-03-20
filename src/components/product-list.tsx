@@ -11,11 +11,20 @@ export function ProductList() {
   useEffect(() => {
     async function fetchProducts() {
       try {
-        const { products } = await medusa.products.list();
-        setProducts(products);
+        const response = await medusa.products.list();
+        setProducts(response.products);
       } catch (err: any) {
         console.error("Failed to fetch products:", err);
-        setError(err.message);
+        
+        // Extract more detailed error message if possible
+        let message = err.message;
+        if (err.response?.data?.message) {
+          message = err.response.data.message;
+        } else if (err.response?.statusText) {
+          message = `${err.response.statusText} (${err.response.status})`;
+        }
+        
+        setError(message);
       } finally {
         setLoading(false);
       }
@@ -35,14 +44,24 @@ export function ProductList() {
 
   if (error) {
     const isTableMissing = error.includes("relation \"products\" does not exist");
+    const isInvalidKey = error.includes("Invalid API key");
+    
     return (
       <div className="text-center py-20 space-y-4">
         <p className="text-destructive font-medium">Error: {error}</p>
-        <p className="text-sm text-muted-foreground max-w-md mx-auto">
-          {isTableMissing 
-            ? "The 'products' table hasn't been created in your Supabase database yet. You need to run the SQL setup script in the Supabase SQL Editor."
-            : "There was an error fetching products. Please check your Supabase connection and table structure."}
-        </p>
+        <div className="text-sm text-muted-foreground max-w-md mx-auto space-y-4">
+          {isInvalidKey ? (
+            <div className="space-y-2">
+              <p className="font-semibold text-foreground">Your Supabase API Key is invalid.</p>
+              <p>Please go to your Supabase Dashboard &gt; Settings &gt; API and copy the <strong>anon (public)</strong> key. Then, update the <code>VITE_SUPABASE_ANON_KEY</code> in your AI Studio settings.</p>
+            </div>
+          ) : isTableMissing ? (
+            <p>The 'products' table hasn't been created in your Supabase database yet. You need to run the SQL setup script in the Supabase SQL Editor.</p>
+          ) : (
+            <p>There was an error fetching products. Please check your Supabase connection and table structure.</p>
+          )}
+        </div>
+        
         {isTableMissing && (
           <div className="bg-secondary p-4 rounded-lg text-left max-w-lg mx-auto overflow-x-auto">
             <pre className="text-xs font-mono">

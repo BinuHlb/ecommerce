@@ -27,18 +27,28 @@ async function startServer() {
   // Products
   app.get("/store/products", async (req, res) => {
     try {
+      if (!process.env.VITE_SUPABASE_URL || !process.env.VITE_SUPABASE_ANON_KEY) {
+        console.error("Supabase credentials missing on server");
+        return res.status(500).json({ 
+          message: "Supabase credentials missing on server. Please check your environment variables." 
+        });
+      }
+
       const { data, error } = await supabase
         .from("products")
         .select("*");
       
       if (error) {
-        console.error("Supabase Products Error:", error);
-        throw error;
+        console.error("Supabase Products Error:", error.message, error.code);
+        return res.status(500).json({ 
+          message: `Supabase Error: ${error.message} (Code: ${error.code})` 
+        });
       }
       
       res.json({ products: data || [] });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      console.error("Unexpected Server Error:", err);
+      res.status(500).json({ message: err.message || "An unexpected server error occurred" });
     }
   });
 
