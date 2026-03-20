@@ -15,15 +15,8 @@ interface ProductCardProps {
 export function ProductCard({ id, name, price, image, category }: ProductCardProps) {
   const addItem = useCartStore((state) => state.addItem);
 
-  const handleAddToCart = () => {
-    const item: CartItem = {
-      id,
-      name,
-      price,
-      image,
-      quantity: 1,
-    };
-    addItem(item);
+  const handleAddToCart = async () => {
+    await addItem(id, 1);
   };
 
   return (

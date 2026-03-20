@@ -7,7 +7,20 @@ import { formatCurrency } from "@/src/lib/utils";
 
 export function CartDrawer() {
   const { items, removeItem, updateQuantity, total } = useCartStore();
-  const { isCartOpen, setCartOpen } = useUIStore();
+  const { isCartOpen, setCartOpen, setCheckoutOpen } = useUIStore();
+
+  const handleCheckout = () => {
+    setCartOpen(false);
+    setCheckoutOpen(true);
+  };
+
+  const handleUpdateQuantity = async (id: string, quantity: number) => {
+    await updateQuantity(id, quantity);
+  };
+
+  const handleRemoveItem = async (id: string) => {
+    await removeItem(id);
+  };
 
   return (
     <AnimatePresence>
@@ -76,7 +89,7 @@ export function CartDrawer() {
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8 rounded-none"
-                              onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                              onClick={() => handleUpdateQuantity(item.id, item.quantity - 1)}
                             >
                               <Minus className="h-3 w-3" />
                             </Button>
@@ -87,7 +100,7 @@ export function CartDrawer() {
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8 rounded-none"
-                              onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                              onClick={() => handleUpdateQuantity(item.id, item.quantity + 1)}
                             >
                               <Plus className="h-3 w-3" />
                             </Button>
@@ -96,7 +109,7 @@ export function CartDrawer() {
                             variant="ghost"
                             size="sm"
                             className="h-auto p-0 text-xs text-muted-foreground hover:text-foreground"
-                            onClick={() => removeItem(item.id)}
+                            onClick={() => handleRemoveItem(item.id)}
                           >
                             Remove
                           </Button>
@@ -117,7 +130,10 @@ export function CartDrawer() {
                 <p className="text-xs text-muted-foreground">
                   Shipping and taxes calculated at checkout.
                 </p>
-                <Button className="w-full py-6 text-base font-semibold">
+                <Button 
+                  className="w-full py-6 text-base font-semibold"
+                  onClick={handleCheckout}
+                >
                   Checkout
                 </Button>
               </div>

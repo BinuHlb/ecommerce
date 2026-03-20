@@ -1,42 +1,60 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useCartStore } from "@/src/store/use-cart-store";
 import { Button } from "@/src/components/ui/button";
 import { formatCurrency } from "@/src/lib/utils";
-import { ShoppingBag, CreditCard, Truck, CheckCircle } from "lucide-react";
+import { ShoppingBag, CreditCard, Truck, CheckCircle, ArrowLeft, Loader2 } from "lucide-react";
 import { supabase } from "@/src/lib/supabase";
+import { useUIStore } from "@/src/store/use-ui-store";
+import { loadStripe } from "@stripe/stripe-js";
+import { Elements } from "@stripe/react-stripe-js";
+import { StripePaymentForm } from "./stripe-payment-form";
+
+const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || "");
 
 export function Checkout() {
   const { items, total, clearCart } = useCartStore();
+  const setCheckoutOpen = useUIStore((state) => state.setCheckoutOpen);
   const [step, setStep] = useState(1);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [clientSecret, setClientSecret] = useState<string | null>(null);
 
-  const handleCheckout = async () => {
+  const subtotal = total();
+  const shipping = 0;
+  const tax = Math.round(subtotal * 0.08);
+  const orderTotal = subtotal + shipping + tax;
+
+  useEffect(() => {
+    if (step === 2 && !clientSecret) {
+      fetch("/api/create-payment-intent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: orderTotal }),
+      })
+        .then((res) => res.json())
+        .then((data) => setClientSecret(data.clientSecret))
+        .catch((err) => console.error("Failed to create payment intent:", err));
+    }
+  }, [step, clientSecret, orderTotal]);
+
+  const handleCheckoutSuccess = async () => {
     setIsProcessing(true);
     
     try {
-      // Get current user
       const { data: { user } } = await supabase.auth.getUser();
       
-      // Create order in Supabase
       const { error } = await supabase
         .from('orders')
         .insert([
           { 
-            user_id: user?.id || 'anonymous', 
+            user_id: user?.id || null, 
             items: items, 
-            total: total(),
+            total: orderTotal,
             status: 'pending'
           }
         ]);
 
-      if (error) {
-        console.error("Supabase Error:", error.message);
-        // We'll proceed with the UI success even if DB fails for this demo
-      }
+      if (error) console.error("Supabase Error:", error.message);
 
-      // Simulate processing time
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      
       setStep(3);
       clearCart();
     } catch (err) {
@@ -52,8 +70,8 @@ export function Checkout() {
         <ShoppingBag className="h-12 w-12 text-muted-foreground" />
         <h2 className="text-2xl font-bold">Your cart is empty</h2>
         <p className="text-muted-foreground">Add some items to your cart to proceed to checkout.</p>
-        <Button asChild>
-          <a href="/">Go to Shop</a>
+        <Button onClick={() => setCheckoutOpen(false)}>
+          Go to Shop
         </Button>
       </div>
     );
@@ -113,34 +131,20 @@ export function Checkout() {
               <div className="flex items-center gap-2 text-xl font-semibold">
                 <CreditCard className="h-5 w-5" /> Payment Method
               </div>
-              <div className="rounded-xl border p-6 space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="font-medium">Credit Card</span>
-                  <div className="flex gap-2">
-                    <div className="h-6 w-10 rounded bg-secondary" />
-                    <div className="h-6 w-10 rounded bg-secondary" />
-                  </div>
+              
+              {clientSecret ? (
+                <Elements stripe={stripePromise} options={{ clientSecret }}>
+                  <StripePaymentForm amount={orderTotal} onSuccess={handleCheckoutSuccess} />
+                </Elements>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-12 gap-4">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  <p className="text-muted-foreground">Initializing secure payment...</p>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Card Number</label>
-                  <input className="w-full rounded-md border p-2 text-sm" placeholder="**** **** **** ****" />
-                </div>
-                <div className="grid gap-4 grid-cols-2">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Expiry</label>
-                    <input className="w-full rounded-md border p-2 text-sm" placeholder="MM/YY" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">CVC</label>
-                    <input className="w-full rounded-md border p-2 text-sm" placeholder="***" />
-                  </div>
-                </div>
-              </div>
+              )}
+              
               <div className="flex gap-4">
                 <Button variant="outline" onClick={() => setStep(1)}>Back</Button>
-                <Button className="flex-1" onClick={handleCheckout} disabled={isProcessing}>
-                  {isProcessing ? "Processing..." : `Pay ${formatCurrency(total())}`}
-                </Button>
               </div>
             </div>
           )}
@@ -156,8 +160,8 @@ export function Checkout() {
                   Thank you for your purchase. We've sent a confirmation email to your inbox.
                 </p>
               </div>
-              <Button asChild>
-                <a href="/">Continue Shopping</a>
+              <Button onClick={() => setCheckoutOpen(false)}>
+                Continue Shopping
               </Button>
             </div>
           )}
@@ -178,9 +182,20 @@ export function Checkout() {
                 ))}
               </div>
               <div className="h-px bg-border" />
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Subtotal</span>
+                  <span>{formatCurrency(subtotal)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Tax (8%)</span>
+                  <span>{formatCurrency(tax)}</span>
+                </div>
+              </div>
+              <div className="h-px bg-border" />
               <div className="flex justify-between font-semibold">
                 <span>Total</span>
-                <span>{formatCurrency(total())}</span>
+                <span>{formatCurrency(orderTotal)}</span>
               </div>
             </div>
           </div>

@@ -1,8 +1,10 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { medusa } from '@/src/lib/medusa';
 
 export interface CartItem {
-  id: string;
+  id: string; // This will be the line item ID from Medusa
+  product_id: string;
   name: string;
   price: number;
   quantity: number;
@@ -11,10 +13,12 @@ export interface CartItem {
 }
 
 interface CartState {
+  cartId: string | null;
   items: CartItem[];
-  addItem: (item: CartItem) => void;
-  removeItem: (id: string) => void;
-  updateQuantity: (id: string, quantity: number) => void;
+  initCart: () => Promise<void>;
+  addItem: (productId: string, quantity: number) => Promise<void>;
+  removeItem: (lineItemId: string) => Promise<void>;
+  updateQuantity: (lineItemId: string, quantity: number) => Promise<void>;
   clearCart: () => void;
   total: () => number;
 }
@@ -22,35 +26,77 @@ interface CartState {
 export const useCartStore = create<CartState>()(
   persist(
     (set, get) => ({
+      cartId: null,
       items: [],
-      addItem: (item) => {
-        const items = get().items;
-        const existingItem = items.find((i) => i.id === item.id);
-        if (existingItem) {
-          set({
-            items: items.map((i) =>
-              i.id === item.id ? { ...i, quantity: i.quantity + item.quantity } : i
-            ),
-          });
+      initCart: async () => {
+        let currentCartId = get().cartId;
+        
+        if (!currentCartId) {
+          try {
+            const { cart } = await medusa.carts.create();
+            set({ cartId: cart.id, items: [] });
+          } catch (err) {
+            console.error("Failed to create cart:", err);
+          }
         } else {
-          set({ items: [...items, item] });
+          try {
+            const { cart } = await medusa.carts.retrieve(currentCartId);
+            set({ items: cart.items as any[] });
+          } catch (err) {
+            console.error("Failed to retrieve cart, creating new one:", err);
+            const { cart } = await medusa.carts.create();
+            set({ cartId: cart.id, items: [] });
+          }
         }
       },
-      removeItem: (id) => {
-        set({ items: get().items.filter((i) => i.id !== id) });
-      },
-      updateQuantity: (id, quantity) => {
-        if (quantity <= 0) {
-          get().removeItem(id);
-          return;
+      addItem: async (productId, quantity) => {
+        let currentCartId = get().cartId;
+        if (!currentCartId) {
+          await get().initCart();
+          currentCartId = get().cartId;
         }
-        set({
-          items: get().items.map((i) =>
-            i.id === id ? { ...i, quantity } : i
-          ),
-        });
+
+        if (currentCartId) {
+          try {
+            const { cart } = await medusa.carts.lineItems.create(currentCartId, {
+              variant_id: productId, // Using product_id as variant_id for this simplified proxy
+              quantity
+            });
+            set({ items: cart.items as any[] });
+          } catch (err) {
+            console.error("Failed to add item:", err);
+          }
+        }
       },
-      clearCart: () => set({ items: [] }),
+      removeItem: async (lineItemId) => {
+        const currentCartId = get().cartId;
+        if (currentCartId) {
+          try {
+            const { cart } = await medusa.carts.lineItems.delete(currentCartId, lineItemId);
+            set({ items: cart.items as any[] });
+          } catch (err) {
+            console.error("Failed to remove item:", err);
+          }
+        }
+      },
+      updateQuantity: async (lineItemId, quantity) => {
+        const currentCartId = get().cartId;
+        if (currentCartId) {
+          if (quantity <= 0) {
+            await get().removeItem(lineItemId);
+            return;
+          }
+          try {
+            const { cart } = await medusa.carts.lineItems.update(currentCartId, lineItemId, {
+              quantity
+            });
+            set({ items: cart.items as any[] });
+          } catch (err) {
+            console.error("Failed to update quantity:", err);
+          }
+        }
+      },
+      clearCart: () => set({ items: [], cartId: null }),
       total: () => {
         return get().items.reduce((acc, item) => acc + item.price * item.quantity, 0);
       },
